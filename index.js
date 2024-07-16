@@ -169,7 +169,7 @@ async function run() {
     // user logout api
     app.patch("/logout/:email", async (req, res) => {
       const { email } = req.params;
-      await usersCollection.updateOne(
+      const result = await usersCollection.updateOne(
         { email: email },
         {
           $set: {
@@ -177,6 +177,8 @@ async function run() {
           },
         }
       );
+
+      res.send(result);
     });
 
     // clear all when deploy start here
