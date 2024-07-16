@@ -166,6 +166,19 @@ async function run() {
       res.send(result);
     });
 
+    // user logout api
+    app.patch("/logout/:email", async (req, res) => {
+      const { email } = req.params;
+      await usersCollection.updateOne(
+        { email: email },
+        {
+          $set: {
+            userIsLogin: false,
+          },
+        }
+      );
+    });
+
     // clear all when deploy start here
     await client.connect();
     await client.db("admin").command({ ping: 1 });
