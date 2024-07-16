@@ -33,7 +33,6 @@ const verifyToken = (req, res, next) => {
   const pureToken = token?.authorization?.split(" ")[1];
 
   jwt.verify(pureToken, process.env.TOKEN_SECRET, (err, decoded) => {
-    console.log("decoded", decoded);
     if (err) {
       return res.status(401).send({ message: "Unauthorized wrong token" });
     }
@@ -179,6 +178,89 @@ async function run() {
       );
 
       res.send(result);
+    });
+
+    // send mony api
+    app.post("/send-money", verifyToken, async (req, res) => {
+      const { identifier, givenAmount, pin, email } = req?.body;
+      const providerEmail = email;
+      // only valided user can send money
+      if (req?.decoded?.email !== email) {
+        return res.status(403).send("Forbidden wrong user in send money");
+      }
+      //
+
+      const result = await usersCollection.findOne({
+        $or: [{ email: identifier }, { mobileNumber: identifier }],
+      });
+
+      let isIdentifierValid;
+
+      if (result?.email === identifier) {
+        isIdentifierValid = true;
+      } else if (result?.mobileNumber === identifier) {
+        isIdentifierValid = true;
+      } else {
+        isIdentifierValid = false;
+      }
+
+      if (isIdentifierValid) {
+        const isPinValid = await bcrypt.compare(pin, result?.pin);
+        if (isPinValid) {
+          if (givenAmount >= 100) {
+            // amount update on sender user when user above 100 tk send money.
+
+            // first find user with email id
+            const { email, balance } = await usersCollection.findOne(
+              {
+                email: providerEmail,
+              },
+              { projection: { _id: 0, email: 1, balance: 1 } }
+            );
+            const newBalance = Number(balance) - 5;
+
+            // secound update balance
+            await usersCollection.updateOne(
+              {
+                email: email,
+              },
+              {
+                $set: {
+                  balance: newBalance,
+                },
+              }
+            );
+          }
+
+          // money provider code start here
+
+          // amount update on receiver user with update receiver balance
+
+          // first find user with email id
+          const { balance } = await usersCollection.findOne(
+            { $or: [{ email: identifier }, { mobileNumber: identifier }] },
+            { projection: { _id: 0, balance: 1 } }
+          );
+
+          const newBalance = Number(balance) + Number(givenAmount);
+
+          const result = await usersCollection.updateOne(
+            { $or: [{ email: identifier }, { mobileNumber: identifier }] },
+            {
+              $set: {
+                balance: newBalance,
+              },
+            }
+          );
+
+          return res.send(result);
+          //
+        }
+        return res.send({ message: "invalid pin number" });
+      }
+
+      //
+      res.send({ message: "Consumer data are not valid" });
     });
 
     // clear all when deploy start here
