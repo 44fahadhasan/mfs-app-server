@@ -63,10 +63,13 @@ async function run() {
     // collection one
     const usersCollection = database.collection("users");
 
-    // collection one
+    // collection two
     const transactionsHistorysCollection = database.collection(
       "transactionsHistorys"
     );
+
+    // collection three
+    const requestsMoneyCollection = database.collection("requestsMoney");
 
     // new user register api
     app.post("/register", async (req, res) => {
@@ -185,10 +188,11 @@ async function run() {
       res.send(result);
     });
 
-    // send mony api
+    // send money api
     app.post("/send-money", verifyToken, async (req, res) => {
       const { identifier, givenAmount, pin, email } = req?.body;
       const providerEmail = email;
+
       // only valided user can send money
       if (req?.decoded?.email !== email) {
         return res.status(403).send("Forbidden wrong user in send money");
@@ -296,6 +300,64 @@ async function run() {
 
       //
       res.send({ message: "Consumer data are not valid" });
+    });
+
+    // request money api
+    app.post("/request-money", verifyToken, async (req, res) => {
+      const { identifier, requestAmount, pin, email } = req?.body;
+
+      // only valided user can request money
+      if (req?.decoded?.email !== email) {
+        return res.status(403).send("Forbidden wrong user in request money");
+      }
+      //
+
+      // find a agent
+      const result = await usersCollection.findOne({
+        $or: [{ email: identifier }, { mobileNumber: identifier }],
+        userRole: "agent",
+      });
+
+      let isIdentifierValid;
+
+      if (result?.email === identifier) {
+        isIdentifierValid = true;
+      } else if (result?.mobileNumber === identifier) {
+        isIdentifierValid = true;
+      } else {
+        isIdentifierValid = false;
+      }
+
+      if (isIdentifierValid) {
+        // find requested user info with email id
+        const requestUserInfo = await usersCollection.findOne(
+          { email: email },
+          { projection: { _id: 0, balance: 1, pin: 1 } }
+        );
+
+        // password checking
+        const isPinValid = await bcrypt.compare(pin, requestUserInfo?.pin);
+
+        if (isPinValid) {
+          // insert new request data
+          const requestMoneyData = {
+            requestStatus: "pending",
+            requestAmount,
+            requestOwnerEamil: email,
+          };
+
+          const result = await requestsMoneyCollection.insertOne(
+            requestMoneyData
+          );
+
+          return res.send(result);
+          //
+        }
+        return res.send({ message: "invalid pin number" });
+      }
+
+      res.send({ message: "Agent data are not valid" });
+      //  end
     });
 
     //  transactions history api
