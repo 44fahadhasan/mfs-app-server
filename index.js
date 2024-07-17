@@ -263,19 +263,21 @@ async function run() {
 
           const newBalance = Number(balance) + Number(givenAmount);
 
-          // Transactions History code start here
-          const transactionsHistorysData = {
-            sendMoneyAmount: givenAmount,
-            newBalance,
-            date: Date.now(),
-            senderEamil: providerEmail,
-            receiveIdentifier: identifier,
-          };
+          if (givenAmount <= 100) {
+            // Transactions History code start here
+            const transactionsHistorysData = {
+              sendMoneyAmount: givenAmount,
+              newBalance,
+              date: Date.now(),
+              senderEamil: providerEmail,
+              receiveIdentifier: identifier,
+            };
 
-          await transactionsHistorysCollection.insertOne(
-            transactionsHistorysData
-          );
-          // Transactions History code end here
+            await transactionsHistorysCollection.insertOne(
+              transactionsHistorysData
+            );
+            // Transactions History code end here
+          }
 
           const result = await usersCollection.updateOne(
             { $or: [{ email: identifier }, { mobileNumber: identifier }] },
@@ -310,16 +312,20 @@ async function run() {
         .find({
           senderEamil: email,
         })
+        .limit(10)
+        .sort({
+          date: -1,
+        })
         .toArray();
       res.send(result);
     });
 
     // clear all when deploy start here
-    await client.connect();
-    await client.db("admin").command({ ping: 1 });
-    console.log(
-      "Pinged your deployment. You successfully connected to MongoDB!"
-    );
+    // await client.connect();
+    // await client.db("admin").command({ ping: 1 });
+    // console.log(
+    //   "Pinged your deployment. You successfully connected to MongoDB!"
+    // );
     // clear all when deploy end here
   } finally {
     // code block
