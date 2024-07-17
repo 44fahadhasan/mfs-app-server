@@ -70,7 +70,7 @@ async function run() {
 
     // new user register api
     app.post("/register", async (req, res) => {
-      const { fullName, email, mobileNumber, pin } = req?.body;
+      const { fullName, email, mobileNumber, accountType, pin } = req?.body;
 
       const hashedPin = await bcrypt.hash(pin, 10);
 
@@ -83,7 +83,7 @@ async function run() {
         balance: 0,
         bonusBalance: false,
         userIsLogin: true,
-        userRole: "normal",
+        userRole: accountType,
       };
 
       //  is user already available in usersCollection checking
