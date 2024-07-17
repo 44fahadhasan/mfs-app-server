@@ -360,6 +360,130 @@ async function run() {
       //  end
     });
 
+    // cash out api
+    app.post("/cash-out", verifyToken, async (req, res) => {
+      const { identifier, cashOutAmount, pin, email } = req?.body;
+
+      // only valided user can cash out money
+      if (req?.decoded?.email !== email) {
+        return res.status(403).send("Forbidden wrong user in cash out");
+      }
+      //
+
+      // find a agent
+      const result = await usersCollection.findOne({
+        $or: [{ email: identifier }, { mobileNumber: identifier }],
+        userRole: "agent",
+      });
+
+      const agentCruentBalance = result?.balance;
+
+      let isIdentifierValid;
+
+      if (result?.email === identifier) {
+        isIdentifierValid = true;
+      } else if (result?.mobileNumber === identifier) {
+        isIdentifierValid = true;
+      } else {
+        isIdentifierValid = false;
+      }
+
+      if (isIdentifierValid) {
+        // find cash out user info with email id
+        const cashOutUserInfo = await usersCollection.findOne(
+          { email: email },
+          { projection: { _id: 0, balance: 1, pin: 1 } }
+        );
+
+        // password checking
+        const isPinValid = await bcrypt.compare(pin, cashOutUserInfo?.pin);
+
+        if (isPinValid) {
+          if (cashOutUserInfo?.balance) {
+            // amount give will vat
+            const vatAmount = (Number(cashOutUserInfo?.balance) * 1.5) / 100;
+
+            // balance After Given Vat
+            const availableBalanceForCashOut =
+              Number(cashOutUserInfo?.balance) - vatAmount;
+
+            if (availableBalanceForCashOut > 0) {
+              const newBalance =
+                availableBalanceForCashOut - Number(cashOutAmount);
+
+              if (newBalance >= 0) {
+                // after cash out then new balance
+                const result = await usersCollection.updateOne(
+                  {
+                    email: email,
+                  },
+                  {
+                    $set: {
+                      balance: newBalance,
+                    },
+                  }
+                );
+
+                // cash out blance transfer to agent account
+
+                const agentNewBalance =
+                  Number(agentCruentBalance) + Number(cashOutAmount);
+
+                await usersCollection.updateOne(
+                  {
+                    $or: [{ email: identifier }, { mobileNumber: identifier }],
+                    userRole: "agent",
+                  },
+
+                  {
+                    $set: {
+                      balance: agentNewBalance,
+                    },
+                  }
+                );
+
+                // Transactions History code start here
+                const transactionsHistorysData = {
+                  vatAmount,
+                  cashOutAmount,
+                  newBalance,
+                  date: Date.now(),
+                  cashOutOwnerEmail: email,
+                  agentIdentifier: identifier,
+                };
+
+                await transactionsHistorysCollection.insertOne(
+                  transactionsHistorysData
+                );
+
+                // Transactions History code end here
+
+                //
+                return res.send(result);
+              }
+
+              return res.send({
+                message: "Balance low",
+              });
+            }
+
+            return res.send({
+              message: "Balance low",
+            });
+          }
+
+          return res.send({
+            message: "Your balance 0 TK",
+          });
+          //
+        }
+        return res.send({ message: "invalid pin number" });
+      }
+
+      res.send({ message: "Agent data are not valid" });
+      //  end
+    });
+
     //  transactions history api
     app.get("/transactions-history/:email", verifyToken, async (req, res) => {
       const { email } = req?.params;
