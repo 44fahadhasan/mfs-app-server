@@ -99,11 +99,7 @@ async function run() {
 
       const { acknowledged } = await usersCollection.insertOne(newUserData);
 
-      const token = jwt.sign({ email }, process.env.TOKEN_SECRET, {
-        expiresIn: "365d",
-      });
-
-      res.send({ acknowledged, token });
+      res.send({ acknowledged });
     });
 
     // user login api
@@ -115,6 +111,7 @@ async function run() {
       };
 
       const result = await usersCollection.findOne(query);
+
       let isIdentifierValid;
 
       if (result?.email === identifier) {
@@ -128,9 +125,9 @@ async function run() {
       if (isIdentifierValid) {
         const isPinValid = await bcrypt.compare(pin, result?.pin);
         if (isPinValid) {
-          //
+          // jwt sign in
           const token = jwt.sign(
-            { email: result?.email },
+            { currentUserIdentifier: identifier },
             process.env.TOKEN_SECRET,
             {
               expiresIn: "365d",
@@ -138,14 +135,12 @@ async function run() {
           );
           //
 
-          await usersCollection.updateOne(
-            { email: result?.email },
-            {
-              $set: {
-                userIsLogin: true,
-              },
-            }
-          );
+          // update user login status
+          await usersCollection.updateOne(query, {
+            $set: {
+              userIsLogin: true,
+            },
+          });
           //
           return res.send({ userIsLogin: true, token });
           //
@@ -162,7 +157,7 @@ async function run() {
       const { identifier } = req?.params;
 
       // only valided user
-      if (req?.decoded?.email !== identifier) {
+      if (req?.decoded?.currentUserIdentifier !== identifier) {
         return res.status(403).send("Forbidden wrong user");
       }
       //
@@ -174,10 +169,10 @@ async function run() {
     });
 
     // user logout api
-    app.patch("/logout/:email", async (req, res) => {
-      const { email } = req.params;
+    app.patch("/logout/:identifier", async (req, res) => {
+      const { identifier } = req.params;
       const result = await usersCollection.updateOne(
-        { email: email },
+        { $or: [{ email: identifier }, { mobileNumber: identifier }] },
         {
           $set: {
             userIsLogin: false,
@@ -194,7 +189,7 @@ async function run() {
       const providerEmail = email;
 
       // only valided user can send money
-      if (req?.decoded?.email !== email) {
+      if (req?.decoded?.currentUserIdentifier !== identifier) {
         return res.status(403).send("Forbidden wrong user in send money");
       }
       //
@@ -270,6 +265,7 @@ async function run() {
           if (givenAmount <= 100) {
             // Transactions History code start here
             const transactionsHistorysData = {
+              fee: "0",
               sendMoneyAmount: givenAmount,
               newBalance,
               date: Date.now(),
@@ -307,7 +303,7 @@ async function run() {
       const { identifier, requestAmount, pin, email } = req?.body;
 
       // only valided user can request money
-      if (req?.decoded?.email !== email) {
+      if (req?.decoded?.currentUserIdentifier !== identifier) {
         return res.status(403).send("Forbidden wrong user in request money");
       }
       //
@@ -365,7 +361,7 @@ async function run() {
       const { identifier, cashOutAmount, pin, email } = req?.body;
 
       // only valided user can cash out money
-      if (req?.decoded?.email !== email) {
+      if (req?.decoded?.currentUserIdentifier !== identifier) {
         return res.status(403).send("Forbidden wrong user in cash out");
       }
       //
@@ -445,10 +441,10 @@ async function run() {
                 // Transactions History code start here
                 const transactionsHistorysData = {
                   vatAmount,
-                  cashOutAmount,
+                  cashOutAmount: cashOutAmount,
                   newBalance,
                   date: Date.now(),
-                  cashOutOwnerEmail: email,
+                  senderEamil: email,
                   agentIdentifier: identifier,
                 };
 
@@ -485,26 +481,30 @@ async function run() {
     });
 
     //  transactions history api
-    app.get("/transactions-history/:email", verifyToken, async (req, res) => {
-      const { email } = req?.params;
+    app.get(
+      "/transactions-history/:identifier",
+      verifyToken,
+      async (req, res) => {
+        const { identifier } = req?.params;
 
-      // only valided user can send money
-      if (req?.decoded?.email !== email) {
-        return res.status(403).send("Forbidden wrong user in transactions");
+        // only valided user can send money
+        if (req?.decoded?.currentUserIdentifier !== identifier) {
+          return res.status(403).send("Forbidden wrong user in transactions");
+        }
+        //
+
+        const result = await transactionsHistorysCollection
+          .find({
+            senderEamil: identifier,
+          })
+          .limit(10)
+          .sort({
+            date: -1,
+          })
+          .toArray();
+        res.send(result);
       }
-      //
-
-      const result = await transactionsHistorysCollection
-        .find({
-          senderEamil: email,
-        })
-        .limit(10)
-        .sort({
-          date: -1,
-        })
-        .toArray();
-      res.send(result);
-    });
+    );
 
     // clear all when deploy start here
     // await client.connect();
