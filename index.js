@@ -63,6 +63,11 @@ async function run() {
     // collection one
     const usersCollection = database.collection("users");
 
+    // collection one
+    const transactionsHistorysCollection = database.collection(
+      "transactionsHistorys"
+    );
+
     // new user register api
     app.post("/register", async (req, res) => {
       const { fullName, email, mobileNumber, pin } = req?.body;
@@ -207,9 +212,8 @@ async function run() {
       if (isIdentifierValid) {
         const isPinValid = await bcrypt.compare(pin, result?.pin);
         if (isPinValid) {
-          if (givenAmount >= 100) {
-            // amount update on sender user when user above 100 tk send money.
-
+          // amount update on sender user when user above 100 tk send money.
+          if (givenAmount > 100) {
             // first find user with email id
             const { email, balance } = await usersCollection.findOne(
               {
@@ -218,6 +222,21 @@ async function run() {
               { projection: { _id: 0, email: 1, balance: 1 } }
             );
             const newBalance = Number(balance) - 5;
+
+            // Transactions History code start here
+            const transactionsHistorysData = {
+              fee: 5,
+              sendMoneyAmount: givenAmount,
+              newBalance,
+              date: Date.now(),
+              senderEamil: providerEmail,
+              receiveIdentifier: identifier,
+            };
+
+            await transactionsHistorysCollection.insertOne(
+              transactionsHistorysData
+            );
+            // Transactions History code end here
 
             // secound update balance
             await usersCollection.updateOne(
@@ -244,6 +263,20 @@ async function run() {
 
           const newBalance = Number(balance) + Number(givenAmount);
 
+          // Transactions History code start here
+          const transactionsHistorysData = {
+            sendMoneyAmount: givenAmount,
+            newBalance,
+            date: Date.now(),
+            senderEamil: providerEmail,
+            receiveIdentifier: identifier,
+          };
+
+          await transactionsHistorysCollection.insertOne(
+            transactionsHistorysData
+          );
+          // Transactions History code end here
+
           const result = await usersCollection.updateOne(
             { $or: [{ email: identifier }, { mobileNumber: identifier }] },
             {
@@ -261,6 +294,24 @@ async function run() {
 
       //
       res.send({ message: "Consumer data are not valid" });
+    });
+
+    //  transactions history api
+    app.get("/transactions-history/:email", verifyToken, async (req, res) => {
+      const { email } = req?.params;
+
+      // only valided user can send money
+      if (req?.decoded?.email !== email) {
+        return res.status(403).send("Forbidden wrong user in transactions");
+      }
+      //
+
+      const result = await transactionsHistorysCollection
+        .find({
+          senderEamil: email,
+        })
+        .toArray();
+      res.send(result);
     });
 
     // clear all when deploy start here
