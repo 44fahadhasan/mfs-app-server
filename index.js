@@ -69,7 +69,8 @@ async function run() {
     );
 
     // collection three
-    const requestsMoneyCollection = database.collection("requestsMoney");
+    const cashInOrOutRequestCollection =
+      database.collection("cashInOrOutRequest");
 
     // new user register api
     app.post("/register", async (req, res) => {
@@ -298,13 +299,13 @@ async function run() {
       res.send({ message: "Consumer data are not valid" });
     });
 
-    // request money api
-    app.post("/request-money", verifyToken, async (req, res) => {
-      const { identifier, requestAmount, pin, email } = req?.body;
+    // cash in money api
+    app.post("/cash-in", verifyToken, async (req, res) => {
+      const { identifier, requestType, cashInAmount, pin, email } = req?.body;
 
-      // only valided user can request money
-      if (req?.decoded?.currentUserIdentifier !== identifier) {
-        return res.status(403).send("Forbidden wrong user in request money");
+      // only valided user can cash in money
+      if (req?.decoded?.currentUserIdentifier !== email) {
+        return res.status(403).send("Forbidden wrong user in cash in money");
       }
       //
 
@@ -326,24 +327,26 @@ async function run() {
 
       if (isIdentifierValid) {
         // find requested user info with email id
-        const requestUserInfo = await usersCollection.findOne(
+        const cashInUserInfo = await usersCollection.findOne(
           { email: email },
           { projection: { _id: 0, balance: 1, pin: 1 } }
         );
 
         // password checking
-        const isPinValid = await bcrypt.compare(pin, requestUserInfo?.pin);
+        const isPinValid = await bcrypt.compare(pin, cashInUserInfo?.pin);
 
         if (isPinValid) {
           // insert new request data
-          const requestMoneyData = {
+          const cashInData = {
             requestStatus: "pending",
-            requestAmount,
+            requestType,
+            cashInAmount,
             requestOwnerEamil: email,
+            agentIdentifier: identifier,
           };
 
-          const result = await requestsMoneyCollection.insertOne(
-            requestMoneyData
+          const result = await cashInOrOutRequestCollection.insertOne(
+            cashInData
           );
 
           return res.send(result);
@@ -356,12 +359,47 @@ async function run() {
       //  end
     });
 
+    // cash in or out all requested api
+    app.get(
+      "/cash-inOrOut-requests/:identifier",
+      verifyToken,
+      async (req, res) => {
+        const { identifier } = req?.params;
+
+        // only valided user can send money
+        if (req?.decoded?.currentUserIdentifier !== identifier) {
+          return res.status(403).send("Forbidden wrong agent");
+        }
+        //
+
+        // find agent mobile and email both
+        const { mobileNumber, email } = await usersCollection.findOne(
+          {
+            $or: [{ mobileNumber: identifier }, { email: identifier }],
+          },
+          { projection: { _id: 0, mobileNumber: 1, email: 1 } }
+        );
+
+        // find all request data based on agent mobile number and email both
+        const result = await cashInOrOutRequestCollection
+          .find({
+            $or: [
+              { agentIdentifier: mobileNumber },
+              { agentIdentifier: email },
+            ],
+          })
+          .toArray();
+
+        res.send(result);
+      }
+    );
+
     // cash out api
     app.post("/cash-out", verifyToken, async (req, res) => {
       const { identifier, cashOutAmount, pin, email } = req?.body;
 
       // only valided user can cash out money
-      if (req?.decoded?.currentUserIdentifier !== identifier) {
+      if (req?.decoded?.currentUserIdentifier !== email) {
         return res.status(403).send("Forbidden wrong user in cash out");
       }
       //
@@ -371,7 +409,7 @@ async function run() {
         $or: [{ email: identifier }, { mobileNumber: identifier }],
         userRole: "agent",
       });
-
+      // console.log(result);
       const agentCruentBalance = result?.balance;
 
       let isIdentifierValid;
